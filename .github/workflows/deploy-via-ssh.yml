@@ -203,4 +203,4 @@ jobs:
     - name: Publish
       shell: bash
       run: | 
-        rsync -rvW -e "ssh -i /home/runner/.ssh/id_rsa" ./artifact/ $SshUsername@$SshHostname:/var/www/remotely/
+        rsync -rvW -e "ssh -i $SshPrivateKey" ./artifact/ $SshUsername@$SshHostname:/var/www/remotely/
