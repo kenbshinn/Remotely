@@ -178,7 +178,7 @@ jobs:
       run: Remove-Item -path "$env:GITHUB_WORKSPACE\GitHubActionsWorkflow.pfx"
 
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     needs: build
     env:
       SshUsername: ${{ secrets.SSH_USERNAME }}
