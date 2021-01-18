@@ -150,14 +150,13 @@ jobs:
         $CurrentVersion = "$Year.$Month.$Day.$Hour$Minute"
         
 		
-		# This was commented out due to GitHub new Security requirements
-        #echo "::set-env name=CurrentVersion::$CurrentVersion"
+	# This was commented out due to GitHub new Security requirements
+	#echo "::set-env name=CurrentVersion::$CurrentVersion"
         
-        # Added this line to see if Actions workflow will work now
-        echo "name=CurrentVersion::$CurrentVersion" >> $GITHUB_ENV        
+	# Added this line to see if Actions workflow will work now
+	echo "name=CurrentVersion::$CurrentVersion" >> $GITHUB_ENV
 		
-		
-        # This was needed in Azure Pipelines.
+	# This w/as needed in Azure Pipelines.
         #[System.Console]::WriteLine("##vso[task.setvariable variable=CurrentVersion]$CurrentVersion")
         Write-Host "Setting current version to $CurrentVersion."
     # Run the Publish script to build clients and server.
