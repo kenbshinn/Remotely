@@ -110,6 +110,7 @@ jobs:
     - name: Setup MSBuild.exe
       uses: microsoft/setup-msbuild@v1
 
+
     # Execute all unit tests in the solution
     - name: Execute unit tests
       run: dotnet test
@@ -147,7 +148,12 @@ jobs:
         $Minute = $VersionDate.Minute.ToString().PadLeft(2, "0")
         $CurrentVersion = "$Year.$Month.$Day.$Hour$Minute"
         
-        echo "::set-env name=CurrentVersion::$CurrentVersion"
+        #This is disabled because it does not work with GITHUB's new security requirements
+        #echo "::set-env name=CurrentVersion::$CurrentVersion"
+        
+        #This is added to resolve commented issue above
+        echo "name=CurrentVersion::$CurrentVersion" >> $GITHUB_ENV
+        
         # This was needed in Azure Pipelines.
         #[System.Console]::WriteLine("##vso[task.setvariable variable=CurrentVersion]$CurrentVersion")
 
