@@ -11,7 +11,7 @@
     "@microsoft/signalr-protocol-msgpack": "^5.0.2",
     "@msgpack/msgpack": "^2.3.0",
     "jquery": "^3.5.1",
-    "msgpack5": "^4.5.0",
+    "msgpack5": "^4.5.1",
     "typescript": "^4.1.3"
   }
 }
