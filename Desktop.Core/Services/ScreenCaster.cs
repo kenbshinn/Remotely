@@ -90,7 +90,7 @@ namespace Remotely.Desktop.Core.Services
                     {
                         await viewer.SendScreenCapture(new CaptureFrame()
                         {
-                            EncodedImageBytes = ImageUtils.EncodeBitmap(initialFrame, viewer.EncoderParams),
+                            EncodedImageBytes = ImageUtils.EncodeJpg(initialFrame, viewer.EncoderParams),
                             Left = viewer.Capturer.CurrentScreenBounds.Left,
                             Top = viewer.Capturer.CurrentScreenBounds.Top,
                             Width = viewer.Capturer.CurrentScreenBounds.Width,
@@ -141,12 +141,11 @@ namespace Remotely.Desktop.Core.Services
                             continue;
                         }
 
-
                         viewer.Capturer.CaptureFullscreen = false;
 
-                        var frameClone = (Bitmap)currentFrame.Clone();
+                        var clone = currentFrame.Clone(diffArea, currentFrame.PixelFormat);
                         await sendFramesLock.WaitAsync();
-                        SendFrame(frameClone, diffArea, viewer, sendFramesLock);
+                        SendFrame(clone, diffArea, viewer, sendFramesLock);
                     }
                     catch (Exception ex)
                     {
@@ -173,61 +172,33 @@ namespace Remotely.Desktop.Core.Services
             }
         }
 
-        private void SendDiffFrame(Bitmap diffImage, Viewer viewer, SemaphoreSlim sendFramesLock)
+        private static void SendFrame(Bitmap clone, Rectangle diffArea, Viewer viewer, SemaphoreSlim sendFramesLock)
         {
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    var encodedImageBytes = ImageUtils.EncodeGif(diffImage);
-
-                    if (encodedImageBytes?.Length > 0)
+                    var encodedImageBytes = ImageUtils.EncodeJpg(clone, viewer.EncoderParams);
+                    
+                    if (encodedImageBytes.Length == 0)
                     {
-                        await viewer.SendScreenCapture(new CaptureFrame()
-                        {
-                            EncodedImageBytes = encodedImageBytes,
-                            Top = 0,
-                            Left = 0,
-                            Width = diffImage.Width,
-                            Height = diffImage.Height,
-                        });
+                        return;
                     }
-                }
-                finally
-                {
-                    sendFramesLock.Release();
-                    diffImage.Dispose();
-                }
-            });
-        }
 
-        private static void SendFrame(Bitmap currentFrame, Rectangle diffArea, Viewer viewer, SemaphoreSlim sendFramesLock)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    using var newImage = currentFrame.Clone(diffArea, PixelFormat.Format32bppArgb);
-
-                    var encodedImageBytes = ImageUtils.EncodeBitmap(newImage, viewer.EncoderParams);
-
-                    if (encodedImageBytes?.Length > 0)
+                    await viewer.SendScreenCapture(new CaptureFrame()
                     {
-                        await viewer.SendScreenCapture(new CaptureFrame()
-                        {
-                            EncodedImageBytes = encodedImageBytes,
-                            Top = diffArea.Top,
-                            Left = diffArea.Left,
-                            Width = diffArea.Width,
-                            Height = diffArea.Height,
-                        });
-                    }
+                        EncodedImageBytes = encodedImageBytes,
+                        Top = diffArea.Top,
+                        Left = diffArea.Left,
+                        Width = diffArea.Width,
+                        Height = diffArea.Height,
+                    });
 
                 }
                 finally
                 {
                     sendFramesLock.Release();
-                    currentFrame.Dispose();
+                    clone.Dispose();
                 }
             });
         }
