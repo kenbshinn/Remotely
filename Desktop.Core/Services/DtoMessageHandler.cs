@@ -5,6 +5,7 @@ using Remotely.Shared.Enums;
 using Remotely.Shared.Models.RemoteControlDtos;
 using Remotely.Shared.Utilities;
 using System;
+using System.Diagnostics;
 using System.Threading.Tasks;
 
 namespace Remotely.Desktop.Core.Services
@@ -90,9 +91,6 @@ namespace Remotely.Desktop.Core.Services
                     case BaseDtoType.CtrlAltDel:
                         await viewer.SendCtrlAltDel();
                         break;
-                    case BaseDtoType.AutoQualityAdjust:
-                        SetAutoQualityAdjust(message, viewer);
-                        break;
                     case BaseDtoType.ToggleAudio:
                         ToggleAudio(message);
                         break;
@@ -107,9 +105,6 @@ namespace Remotely.Desktop.Core.Services
                         break;
                     case BaseDtoType.KeyPress:
                         await KeyPress(message);
-                        break;
-                    case BaseDtoType.QualityChange:
-                        QualityChange(message, viewer);
                         break;
                     case BaseDtoType.File:
                         await DownloadFile(message);
@@ -168,8 +163,16 @@ namespace Remotely.Desktop.Core.Services
         {
             for (int i = 0; i < 5; i++)
             {
-                if (viewer.PendingSentFrames.TryDequeue(out _))
+                if (viewer.PendingSentFrames.TryDequeue(out var frame))
                 {
+                    var roundtrip = (DateTimeOffset.Now - frame.Timestamp).TotalSeconds;
+                    var bps = frame.FrameSize / (roundtrip / 2);
+
+                    if (bps > viewer.PeakBytesPerSecond)
+                    {
+                        viewer.PeakBytesPerSecond = bps;
+                        Debug.WriteLine($"Peak Mbps: {bps / 1024 / 1024 * 8}");
+                    }
                     break;
                 }
             }
@@ -223,22 +226,11 @@ namespace Remotely.Desktop.Core.Services
         {
             FileTransferService.OpenFileTransferWindow(viewer);
         }
-        private void QualityChange(byte[] message, Services.Viewer viewer)
-        {
-            var dto = MessagePackSerializer.Deserialize<QualityChangeDto>(message);
-            viewer.ImageQuality = dto.QualityLevel;
-        }
 
         private void SelectScreen(byte[] message, Services.Viewer viewer)
         {
             var dto = MessagePackSerializer.Deserialize<SelectScreenDto>(message);
             viewer.Capturer.SetSelectedScreen(dto.DisplayName);
-        }
-
-        private void SetAutoQualityAdjust(byte[] message, Services.Viewer viewer)
-        {
-            var dto = MessagePackSerializer.Deserialize<AutoQualityAdjustDto>(message);
-            viewer.AutoAdjustQuality = dto.IsOn;
         }
 
         private void SetKeyStatesUp()
