@@ -11,7 +11,6 @@ using Remotely.Desktop.Linux.Native;
 using Remotely.Desktop.Linux.Services;
 using Remotely.Desktop.Linux.Views;
 using Remotely.Shared.Models;
-using Remotely.Shared.Services;
 using Remotely.Shared.Utilities;
 using System;
 using System.Collections.ObjectModel;
@@ -244,6 +243,7 @@ namespace Remotely.Desktop.Linux.ViewModels
                 {
                     FileName = "sudo",
                     Arguments = "bash -c \"apt-get -y install libx11-dev ; " +
+                        "apt-get -y install libxrandr-dev ; " +
                         "apt-get -y install libc6-dev ; " +
                         "apt-get -y install libgdiplus ; " +
                         "apt-get -y install libxtst-dev ; " +

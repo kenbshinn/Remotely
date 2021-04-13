@@ -14,7 +14,6 @@ using System.Drawing.Imaging;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using SkiaSharp;
 
 namespace Remotely.Desktop.Core.Services
 {
@@ -55,6 +54,8 @@ namespace Remotely.Desktop.Core.Services
                 viewer.Name = screenCastRequest.RequesterName;
                 viewer.ViewerConnectionID = screenCastRequest.ViewerID;
 
+                var screenBounds = viewer.Capturer.CurrentScreenBounds;
+
                 Logger.Write($"Starting screen cast.  Requester: {viewer.Name}. " +
                     $"Viewer ID: {viewer.ViewerConnectionID}.  App Mode: {_conductor.Mode}");
 
@@ -78,8 +79,7 @@ namespace Remotely.Desktop.Core.Services
                        viewer.Capturer.SelectedScreen,
                        viewer.Capturer.GetDisplayNames().ToArray());
 
-                await viewer.SendScreenSize(viewer.Capturer.CurrentScreenBounds.Width,
-                    viewer.Capturer.CurrentScreenBounds.Height);
+                await viewer.SendScreenSize(screenBounds.Width, screenBounds.Height);
 
                 await viewer.SendCursorChange(_cursorIconWatcher.GetCurrentCursor());
 
@@ -96,11 +96,11 @@ namespace Remotely.Desktop.Core.Services
                     {
                         await viewer.SendScreenCapture(new CaptureFrame()
                         {
-                            EncodedImageBytes = ImageUtils.EncodeWithSkia(initialFrame, SKEncodedImageFormat.Webp, _maxQuality),
-                            Left = viewer.Capturer.CurrentScreenBounds.Left,
-                            Top = viewer.Capturer.CurrentScreenBounds.Top,
-                            Width = viewer.Capturer.CurrentScreenBounds.Width,
-                            Height = viewer.Capturer.CurrentScreenBounds.Height
+                            EncodedImageBytes = ImageUtils.EncodeJpeg(initialFrame, _maxQuality),
+                            Left = screenBounds.Left,
+                            Top = screenBounds.Top,
+                            Width = screenBounds.Width,
+                            Height = screenBounds.Height
                         });
                     }
                 }
@@ -146,7 +146,7 @@ namespace Remotely.Desktop.Core.Services
                         }
 
                         if (refreshTimer.Elapsed.TotalSeconds > 10 ||
-                            refreshNeeded && refreshTimer.Elapsed.TotalSeconds > 3)
+                            refreshNeeded && refreshTimer.Elapsed.TotalSeconds > 5)
                         {
                             viewer.Capturer.CaptureFullscreen = true;
                         }
@@ -168,23 +168,27 @@ namespace Remotely.Desktop.Core.Services
 
                         using var clone = currentFrame.Clone(diffArea, currentFrame.PixelFormat);
 
-                        if (viewer.PeakBytesPerSecond > 0)
-                        {
-                            var expectedSize = clone.Height * clone.Width * 4 * .1;
-                            var timeToSend = expectedSize / viewer.PeakBytesPerSecond;
-                            currentQuality = Math.Max(_minQuality, Math.Min(_maxQuality, (int)((.1 / timeToSend) * _maxQuality)));
-                            Debug.WriteLine($"Current Quality: {currentQuality}");
-                        }
-
                         byte[] encodedImageBytes;
                         if (viewer.Capturer.CaptureFullscreen)
                         {
-                            viewer.PeakBytesPerSecond = 0;
-                            encodedImageBytes = ImageUtils.EncodeWithSkia(clone, SKEncodedImageFormat.Webp, _maxQuality);
+                            // Recalculate Bps.
+                            viewer.AverageBytesPerSecond = 0;
+                            encodedImageBytes = ImageUtils.EncodeJpeg(clone, _maxQuality);
                         }
                         else
                         {
-                            encodedImageBytes = ImageUtils.EncodeWithSkia(clone, SKEncodedImageFormat.Jpeg, currentQuality);
+                            if (viewer.AverageBytesPerSecond > 0)
+                            {
+                                var expectedSize = clone.Height * clone.Width * 4 * .1;
+                                var timeToSend = expectedSize / viewer.AverageBytesPerSecond;
+                                currentQuality = Math.Max(_minQuality, Math.Min(_maxQuality, (int)(.1 / timeToSend * _maxQuality)));
+                                if (currentQuality < _maxQuality - 10)
+                                {
+                                    refreshNeeded = true;
+                                    Debug.WriteLine($"Quality Reduced: {currentQuality}");
+                                }
+                            }
+                            encodedImageBytes = ImageUtils.EncodeJpeg(clone, currentQuality);
                         }
 
                         viewer.Capturer.CaptureFullscreen = false;
