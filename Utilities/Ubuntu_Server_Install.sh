@@ -49,6 +49,7 @@ echo "$caddyConfig" > /etc/caddy/Caddyfile
 
 serviceConfig="[Unit]
 Description=Remotely Server
+
 [Service]
 WorkingDirectory=$AppRoot
 ExecStart=/usr/bin/dotnet $AppRoot/Remotely_Server.dll
@@ -58,6 +59,7 @@ RestartSec=10
 SyslogIdentifier=remotely
 Environment=ASPNETCORE_ENVIRONMENT=Production
 Environment=DOTNET_PRINT_TELEMETRY_MESSAGE=false
+
 [Install]
 WantedBy=multi-user.target"
 
