@@ -69,11 +69,11 @@ namespace Remotely.Server.Components.Devices
             GC.SuppressFinalize(this);
         }
 
-        protected override Task OnInitializedAsync()
+        protected override async Task OnInitializedAsync()
         {
+            await base.OnInitializedAsync();
             CircuitConnection.MessageReceived += CircuitConnection_MessageReceived;
             AppState.PropertyChanged += AppState_PropertyChanged;
-            return base.OnInitializedAsync();
         }
 
         protected override Task OnAfterRenderAsync(bool firstRender)
@@ -308,7 +308,9 @@ namespace Remotely.Server.Components.Devices
                     OrganizationID = User.OrganizationID,
                     RunAt = Time.Now,
                     SavedScriptId = script.Id,
-                    RunOnNextConnect = false
+                    RunOnNextConnect = false,
+                    Initiator = User.UserName,
+                    InputType = ScriptInputType.OneTimeScript
                 };
 
                 scriptRun.Devices = DataService.GetDevices(AppState.DevicesFrameSelectedDevices);

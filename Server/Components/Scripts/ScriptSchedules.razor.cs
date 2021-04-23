@@ -53,6 +53,7 @@ namespace Remotely.Server.Components.Scripts
 
         protected override async Task OnInitializedAsync()
         {
+            await base.OnInitializedAsync();
             _deviceGroups = DataService.GetDeviceGroups(User.UserName);
             _devices = DataService
                 .GetDevicesForUser(User.UserName)
@@ -60,7 +61,6 @@ namespace Remotely.Server.Components.Scripts
                 .ToArray();
 
             await RefreshSchedules();
-            await base.OnInitializedAsync();
         }
 
         private void CreateNew()
@@ -75,7 +75,7 @@ namespace Remotely.Server.Components.Scripts
         {
             if (User.Id != _selectedSchedule.CreatorId)
             {
-                ToastService.ShowToast("You can't delete other people's scripts.", classString: "bg-warning");
+                ToastService.ShowToast("You can't delete other people's script schedules.", classString: "bg-warning");
                 return;
             }
 
@@ -153,16 +153,14 @@ namespace Remotely.Server.Components.Scripts
             _selectedSchedule.OrganizationID = User.OrganizationID;
             _selectedSchedule.NextRun = _selectedSchedule.StartAt;
 
-            _selectedSchedule.Devices = DataService.GetDevices(_selectedDevices);
-            _selectedSchedule.DeviceGroups = DataService.GetDeviceGroups(Username)
-                .Where(x => _selectedDeviceGroups.Contains(x.ID))
-                .ToList();
+            _selectedSchedule.Devices = _devices.Where(x => _selectedDevices.Contains(x.ID)).ToList();
+            _selectedSchedule.DeviceGroups = _deviceGroups.Where(x => _selectedDeviceGroups.Contains(x.ID)).ToList();
 
             await DataService.AddOrUpdateScriptSchedule(_selectedSchedule);
             CreateNew();
             await RefreshSchedules();
-            ToastService.ShowToast("Schedule created.");
-            _alertMessage = "Schedule created.";
+            ToastService.ShowToast("Schedule saved.");
+            _alertMessage = "Schedule saved.";
         }
 
         private async Task RefreshSchedules()

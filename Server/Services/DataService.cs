@@ -22,7 +22,7 @@ namespace Remotely.Server.Services
     // TODO: Separate this into domains-specific services.
     public interface IDataService
     {
-        Task AddAlert(string deviceID, string organizationID, string alertMessage);
+        Task AddAlert(string deviceID, string organizationID, string alertMessage, string details = null);
         bool AddDeviceGroup(string orgID, DeviceGroup deviceGroup, out string deviceGroupID, out string errorMessage);
 
         InviteLink AddInvite(string orgID, InviteViewModel invite);
@@ -98,7 +98,7 @@ namespace Remotely.Server.Services
 
         EventLog[] GetAllEventLogs(string orgID);
 
-        InviteLink[] GetAllInviteLinks(string userName);
+        InviteLink[] GetAllInviteLinks(string organizationId);
 
         ScriptResult[] GetAllScriptResults(string orgId, string deviceId);
 
@@ -106,7 +106,7 @@ namespace Remotely.Server.Services
 
         RemotelyUser[] GetAllUsersForServer();
 
-        RemotelyUser[] GetAllUsersInOrganization(string userName);
+        Task<RemotelyUser[]> GetAllUsersInOrganization(string orgId);
 
         ApiToken GetApiKey(string keyId);
 
@@ -168,6 +168,8 @@ namespace Remotely.Server.Services
         SharedFile GetSharedFiled(string fileID);
 
         int GetTotalDevices();
+
+        Task<RemotelyUser> GetUserAsync(string username);
 
         RemotelyUser GetUserByID(string userID);
 
@@ -231,7 +233,8 @@ namespace Remotely.Server.Services
             _appConfig = appConfig;
             _hostEnvironment = hostEnvironment;
         }
-        public async Task AddAlert(string deviceId, string organizationID, string alertMessage)
+
+        public async Task AddAlert(string deviceId, string organizationID, string alertMessage, string details = null)
         {
             using var dbContext = _dbFactory.CreateDbContext();
 
@@ -256,7 +259,8 @@ namespace Remotely.Server.Services
                     CreatedOn = DateTimeOffset.Now,
                     DeviceID = deviceId,
                     Message = alertMessage,
-                    OrganizationID = organizationID
+                    OrganizationID = organizationID,
+                    Details = details
                 };
                 x.Alerts.Add(alert);
             });
@@ -377,6 +381,7 @@ namespace Remotely.Server.Services
             dbContext.SavedScripts.Update(script);
             script.CreatorId = userId;
             script.Creator = dbContext.Users.Find(userId);
+            script.OrganizationID = script.Creator.OrganizationID;
             await dbContext.SaveChangesAsync();
         }
 
@@ -411,22 +416,41 @@ namespace Remotely.Server.Services
         {
             using var dbContext = _dbFactory.CreateDbContext();
 
-            if (schedule.Devices is not null)
-            {
-                dbContext.AttachRange(schedule.Devices);
-            }
+            var existingSchedule = await dbContext.ScriptSchedules
+                .Include(x => x.Creator)
+                .Include(x => x.Devices)
+                .Include(x => x.DeviceGroups)
+                .FirstOrDefaultAsync(x => x.Id == schedule.Id);
 
-            if (schedule.DeviceGroups is not null)
+            if (existingSchedule is null)
             {
-                dbContext.AttachRange(schedule.DeviceGroups);
+                dbContext.Update(schedule);
             }
-           
-            if (schedule.Creator is not null)
+            else
             {
-                dbContext.Attach(schedule.Creator);
-            }
+                var entry = dbContext.Entry(existingSchedule);
+                entry.CurrentValues.SetValues(schedule);
 
-            dbContext.ScriptSchedules.Update(schedule);
+                existingSchedule.Devices.Clear();
+                if (schedule.Devices?.Any() == true)
+                {
+                    var deviceIds = schedule.Devices.Select(x => x.ID);
+                    var newDevices = await dbContext.Devices
+                        .Where(x => deviceIds.Contains(x.ID))
+                        .ToListAsync();
+                    existingSchedule.Devices.AddRange(newDevices);
+                }
+
+                existingSchedule.DeviceGroups.Clear();
+                if (schedule.DeviceGroups?.Any() == true)
+                {
+                    var deviceGroupIds = schedule.DeviceGroups.Select(x => x.ID);
+                    var newDeviceGroups = await dbContext.DeviceGroups
+                        .Where(x => deviceGroupIds.Contains(x.ID))
+                        .ToListAsync();
+                    existingSchedule.DeviceGroups.AddRange(newDeviceGroups);
+                }
+            }
 
             await dbContext.SaveChangesAsync();
         }
@@ -848,6 +872,8 @@ namespace Remotely.Server.Services
                 .ThenInclude(x => x.Devices)
                 .Include(x => x.Organization)
                 .Include(x => x.Alerts)
+                .Include(x => x.SavedScripts)
+                .Include(x => x.ScriptSchedules)
                 .FirstOrDefault(x =>
                     x.Id == targetUserID &&
                     x.OrganizationID == orgID);
@@ -920,6 +946,11 @@ namespace Remotely.Server.Services
 
         public bool DoesUserHaveAccessToDevice(string deviceID, RemotelyUser remotelyUser)
         {
+            if (remotelyUser is null)
+            {
+                return false;
+            }
+
             using var dbContext = _dbFactory.CreateDbContext();
 
             return dbContext.Devices
@@ -1043,16 +1074,13 @@ namespace Remotely.Server.Services
                 .ToArray();
         }
 
-        public InviteLink[] GetAllInviteLinks(string userName)
+        public InviteLink[] GetAllInviteLinks(string organizationId)
         {
             using var dbContext = _dbFactory.CreateDbContext();
 
-            return dbContext.Users
-                   .Include(x => x.Organization)
-                   .ThenInclude(x => x.InviteLinks)
-                   .FirstOrDefault(x => x.UserName == userName)
-                   .Organization
-                   .InviteLinks.ToArray() ?? Array.Empty<InviteLink>();
+            return dbContext.InviteLinks
+                .Where(x => x.OrganizationID == organizationId)
+                .ToArray();
         }
 
         public ScriptResult[] GetAllScriptResults(string orgId, string deviceId)
@@ -1082,17 +1110,20 @@ namespace Remotely.Server.Services
             return dbContext.Users.ToArray();
         }
 
-        public RemotelyUser[] GetAllUsersInOrganization(string userName)
+        public async Task<RemotelyUser[]> GetAllUsersInOrganization(string orgId)
         {
-            if (string.IsNullOrWhiteSpace(userName))
+            if (string.IsNullOrWhiteSpace(orgId))
             {
                 return Array.Empty<RemotelyUser>();
             }
 
             using var dbContext = _dbFactory.CreateDbContext();
 
-            var user = dbContext.Users.FirstOrDefault(x => x.UserName == userName);
-            return dbContext.Users.Where(x => x.OrganizationID == user.OrganizationID).ToArray();
+            var organization = await dbContext.Organizations
+                .Include(x => x.RemotelyUsers)
+                .FirstOrDefaultAsync(x => x.ID == orgId);
+
+            return organization.RemotelyUsers.ToArray();
         }
 
         public ApiToken GetApiKey(string keyId)
@@ -1204,7 +1235,7 @@ namespace Remotely.Server.Services
             }
             var userId = user.Id;
 
-            return dbContext.DeviceGroups
+            var groupIds = dbContext.DeviceGroups
                 .Include(x => x.Users)
                 .ThenInclude(x => x.DeviceGroups)
                 .Where(x =>
@@ -1215,7 +1246,17 @@ namespace Remotely.Server.Services
                         x.Users.Any(x => x.Id == userId)
                     )
                 )
-                .OrderBy(x => x.Name).ToArray() ?? Array.Empty<DeviceGroup>();
+                .Select(x => x.ID);
+
+            if (groupIds.Any())
+            {
+                return dbContext.DeviceGroups
+                    .Where(x => groupIds.Contains(x.ID))
+                    .OrderBy(x => x.Name)
+                    .ToArray();
+            }
+
+            return Array.Empty<DeviceGroup>();
         }
 
         public DeviceGroup[] GetDeviceGroupsForOrganization(string organizationId)
@@ -1243,9 +1284,20 @@ namespace Remotely.Server.Services
         public Device[] GetDevicesForUser(string userName)
         {
             using var dbContext = _dbFactory.CreateDbContext();
+
+            if (string.IsNullOrWhiteSpace(userName))
+            {
+                return Array.Empty<Device>();
+            }
+
             var user = dbContext.Users.FirstOrDefault(x => x.UserName == userName);
 
-            return dbContext.Devices
+            if (user is null)
+            {
+                return Array.Empty<Device>();
+            }
+
+            var deviceIds = dbContext.Devices
                 .Include(x => x.DeviceGroup)
                 .ThenInclude(x => x.Users)
                 .Where(x =>
@@ -1256,6 +1308,10 @@ namespace Remotely.Server.Services
                         !x.DeviceGroup.Users.Any() ||
                         x.DeviceGroup.Users.Any(deviceUser => deviceUser.Id == user.Id)
                     ))
+                .Select(x => x.ID);
+
+            return dbContext.Devices
+                .Where(x => deviceIds.Contains(x.ID))
                 .ToArray();
         }
 
@@ -1266,7 +1322,10 @@ namespace Remotely.Server.Services
             var user = dbContext.Users
                         .FirstOrDefault(x => x.UserName == userName);
 
-            var query = dbContext.EventLogs.AsQueryable();
+            var query = dbContext.EventLogs
+                .AsNoTracking()
+                .AsQueryable();
+
             var fromDate = from.Date;
             var toDate = to.Date.AddDays(1);
 
@@ -1278,7 +1337,9 @@ namespace Remotely.Server.Services
             else
             {
                 var orgID = user.OrganizationID;
-                query = query.Where(x => x.OrganizationID == orgID && x.TimeStamp >= fromDate && x.TimeStamp <= toDate)
+                query = query
+                        .Where(x => x.OrganizationID == orgID && 
+                            x.TimeStamp >= fromDate && x.TimeStamp <= toDate)
                         .OrderByDescending(x => x.TimeStamp);
             }
             if (type != null)
@@ -1361,10 +1422,12 @@ namespace Remotely.Server.Services
             var scriptRunGroups = dbContext.ScriptRuns
                 .Include(x => x.Devices)
                 .Include(x => x.DevicesCompleted)
-                .Where(x =>
-                    x.Devices.Any(x => x.ID == deviceId) &&
-                    !x.DevicesCompleted.Any(x => x.ID == deviceId) &&
-                    x.RunAt < now)
+                .Where(scriptRun =>
+                    scriptRun.RunOnNextConnect &&
+                    dbContext.SavedScripts.Any(savedScript => savedScript.Id == scriptRun.SavedScriptId) &&
+                    scriptRun.Devices.Any(device => device.ID == deviceId) &&
+                    !scriptRun.DevicesCompleted.Any(deviceCompleted => deviceCompleted.ID == deviceId) &&
+                    scriptRun.RunAt < now)
                 .AsEnumerable()
                 .GroupBy(x => x.SavedScriptId);
 
@@ -1397,8 +1460,6 @@ namespace Remotely.Server.Services
             using var dbContext = _dbFactory.CreateDbContext();
             
             return await dbContext.SavedScripts
-                .Include(x => x.Creator)
-                .AsNoTracking()
                 .FirstOrDefaultAsync(x =>
                     x.Id == scriptId &&
                     (x.IsPublic || x.CreatorId == userId));
@@ -1415,9 +1476,9 @@ namespace Remotely.Server.Services
             using var dbContext = _dbFactory.CreateDbContext();
 
             var query = dbContext.SavedScripts
-                    .Include(x => x.Creator)
-                    .Where(x => x.Creator.OrganizationID == organizationId &&
-                        (x.IsPublic || x.CreatorId == userId));
+                .Include(x => x.Creator)
+                .Where(x => x.Creator.OrganizationID == organizationId &&
+                    (x.IsPublic || x.CreatorId == userId));
 
             return await query.Select(x => new SavedScript()
             {
@@ -1473,6 +1534,7 @@ namespace Remotely.Server.Services
                 .Where(x => x.NextRun < now)
                 .ToListAsync();
         }
+
         public List<string> GetServerAdmins()
         {
             using var dbContext = _dbFactory.CreateDbContext();
@@ -1497,9 +1559,20 @@ namespace Remotely.Server.Services
             return dbContext.Devices.Count();
         }
 
+        public async Task<RemotelyUser> GetUserAsync(string username)
+        {
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                return null;
+            }
+            using var dbContext = _dbFactory.CreateDbContext();
+
+            return await dbContext.Users.FirstOrDefaultAsync(x => x.UserName == username);
+        }
+
         public RemotelyUser GetUserByID(string userID)
         {
-            if (userID == null)
+            if (string.IsNullOrWhiteSpace(userID))
             {
                 return null;
             }
@@ -1584,6 +1657,12 @@ namespace Remotely.Server.Services
             using var dbContext = _dbFactory.CreateDbContext();
 
             var devices = dbContext.Devices
+                .Include(x => x.ScriptResults)
+                .Include(x => x.ScriptRuns)
+                .Include(x => x.ScriptSchedules)
+                .Include(x => x.ScriptRunsCompleted)
+                .Include(x => x.DeviceGroup)
+                .Include(x => x.Alerts)
                 .Where(x => deviceIDs.Contains(x.ID));
 
             dbContext.Devices.RemoveRange(devices);

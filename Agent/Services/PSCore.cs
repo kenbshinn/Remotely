@@ -75,14 +75,16 @@ namespace Remotely.Agent.Services
         {
             var sw = Stopwatch.StartNew();
 
+            _powershell.Streams.ClearStreams();
             _powershell.Commands.Clear();
+
             _powershell.AddScript(input);
             var results = _powershell.Invoke();
 
             using var ps = PowerShell.Create();
             ps.AddScript("$args[0] | Out-String");
             ps.AddArgument(results);
-            var hostOutput = (ps.Invoke()[0].BaseObject as string);
+            var hostOutput = (string)ps.Invoke()[0].BaseObject;
 
             var verboseOut = _powershell.Streams.Verbose.ReadAll().Select(x => x.Message);
             var debugOut = _powershell.Streams.Debug.ReadAll().Select(x => x.Message);
@@ -93,11 +95,10 @@ namespace Remotely.Agent.Services
             var standardOut = hostOutput.Split(Environment.NewLine)
                 .Concat(infoOut)
                 .Concat(debugOut)
-                .Concat(verboseOut)
-                .Concat(warningOut);
+                .Concat(verboseOut);
 
-            _powershell.Streams.ClearStreams();
-            _powershell.Commands.Clear();
+            var errorAndWarningOut = errorOut.Concat(warningOut).ToArray();
+
 
             return new ScriptResult()
             {
@@ -106,9 +107,9 @@ namespace Remotely.Agent.Services
                 ScriptInput = input,
                 Shell = Shared.Enums.ScriptingShell.PSCore,
                 StandardOutput = standardOut.ToArray(),
-                ErrorOutput = errorOut.ToArray(),
+                ErrorOutput = errorAndWarningOut,
                 RunTime = sw.Elapsed,
-                HadErrors = _powershell.HadErrors
+                HadErrors = _powershell.HadErrors || errorAndWarningOut.Any()
             };
         }
     }

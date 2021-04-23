@@ -52,9 +52,9 @@ namespace Remotely.Server.Pages
 
         protected override async Task OnInitializedAsync()
         {
-            await RefreshData();
-
             await base.OnInitializedAsync();
+
+            await RefreshData();
         }
 
         private void CreateNewDeviceGroup()
@@ -225,9 +225,10 @@ namespace Remotely.Server.Pages
             _invites.Clear();
             _deviceGroups.Clear();
 
-            _invites.AddRange(DataService.GetAllInviteLinks(Username).OrderBy(x => x.InvitedUser));
+            _invites.AddRange(DataService.GetAllInviteLinks(User.OrganizationID).OrderBy(x => x.InvitedUser));
             _deviceGroups.AddRange(DataService.GetDeviceGroups(Username).OrderBy(x => x.Name));
-            _orgUsers.AddRange(DataService.GetAllUsersInOrganization(Username).OrderBy(x => x.UserName));
+            var orgUsers = await DataService.GetAllUsersInOrganization(User.OrganizationID);
+            _orgUsers.AddRange(orgUsers.OrderBy(x => x.UserName));
         }
         private async Task ResetPassword(RemotelyUser user)
         {

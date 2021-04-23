@@ -79,11 +79,13 @@ namespace Remotely.Server.Pages
         [EmailAddress]
         public string SmtpEmail { get; set; }
 
-        [Display(Name = "SMTP Enable SSL")]
-        public bool SmtpEnableSsl { get; set; }
-
         [Display(Name = "SMTP Host")]
         public string SmtpHost { get; set; }
+        [Display(Name = "SMTP Local Domain")]
+        public string SmtpLocalDomain { get; set; }
+
+        [Display(Name = "SMTP Check Certificate Revocation")]
+        public bool SmtpCheckCertificateRevocation { get; set; }
 
         [Display(Name = "SMTP Password")]
         public string SmtpPassword { get; set; }
@@ -175,10 +177,10 @@ namespace Remotely.Server.Pages
             }
         }
 
-
-
-        protected override void OnInitialized()
+        protected override async Task OnInitializedAsync()
         {
+            await base.OnInitializedAsync();
+
             if (!User.IsServerAdmin)
             {
                 return;
@@ -186,8 +188,7 @@ namespace Remotely.Server.Pages
 
             Configuration.Bind("ApplicationOptions", Input);
             Configuration.Bind("ConnectionStrings", ConnectionStrings);
-            _userList.AddRange(DataService.GetAllUsersForServer().OrderBy(x=>x.UserName));
-            base.OnInitialized();
+            _userList.AddRange(DataService.GetAllUsersForServer().OrderBy(x => x.UserName));
         }
 
         private void AddBannedDevice()
@@ -317,12 +318,12 @@ namespace Remotely.Server.Pages
             var success = await EmailSender.SendEmailAsync(User.Email, "Remotely Test Email", "Congratulations! Your SMTP settings are working!", User.OrganizationID);
             if (success)
             {
-                ToastService.ShowToast("Test email sent.  Check your inbox (including spam folder).");
-                _alertMessage = "Test email sent.  Check your inbox (including spam folder).";
+                ToastService.ShowToast($"Test email sent to {User.Email}.  Check your inbox (or spam folder).");
+                _alertMessage = $"Test email sent to {User.Email}.  Check your inbox (or spam folder).";
             }
             else
             {
-                ToastService.ShowToast("Error sending email.  Check the server logs for details.");
+                ToastService.ShowToast("Error sending email.  Check the server logs for details.", classString: "bg-error");
                 _alertMessage = "Error sending email.  Check the server logs for details.";
             }
         }

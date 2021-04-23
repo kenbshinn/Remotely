@@ -21,6 +21,7 @@ namespace Remotely.Agent.Services
     {
         private static readonly ConcurrentDictionary<string, ExternalScriptingShell> _sessions = new();
         private readonly ConfigService _configService;
+        private string _lineEnding;
         private ScriptingShell _shell;
 
         public ExternalScriptingShell(ConfigService configService)
@@ -28,87 +29,21 @@ namespace Remotely.Agent.Services
             _configService = configService;
         }
 
-        private void Init(ScriptingShell shell, string shellProcessName, string lineEnding, string connectionId)
-        {
-            _shell = shell;
-            _lineEnding = lineEnding;
-            SenderConnectionId = connectionId;
+        private string ErrorOut { get; set; }
 
-            var psi = new ProcessStartInfo(shellProcessName)
-            {
-                WindowStyle = ProcessWindowStyle.Hidden,
-                Verb = "RunAs",
-                UseShellExecute = false,
-                RedirectStandardError = true,
-                RedirectStandardInput = true,
-                RedirectStandardOutput = true
-            };
+        private string LastInputID { get; set; }
 
-            var connectionInfo = _configService.GetConnectionInfo();
-            psi.Environment.Add("DeviceId", connectionInfo.DeviceID);
-            psi.Environment.Add("ServerUrl", connectionInfo.Host);
+        private ManualResetEvent OutputDone { get; } = new(false);
 
-            ShellProcess = new Process
-            {
-                StartInfo = psi
-            };
-            ShellProcess.ErrorDataReceived += ShellProcess_ErrorDataReceived;
-            ShellProcess.OutputDataReceived += ShellProcess_OutputDataReceived;
+        private System.Timers.Timer ProcessIdleTimeout { get; set; }
 
-            ShellProcess.Start();
-
-            ShellProcess.BeginErrorReadLine();
-            ShellProcess.BeginOutputReadLine();
-
-            ProcessIdleTimeout = new System.Timers.Timer(TimeSpan.FromMinutes(10).TotalMilliseconds)
-            {
-                AutoReset = false
-            };
-            ProcessIdleTimeout.Elapsed += ProcessIdleTimeout_Elapsed;
-            ProcessIdleTimeout.Start();
-        }
-
-        private Process ShellProcess { get; set; }
         private string SenderConnectionId { get; set; }
 
-        private string _lineEnding;
+        private Process ShellProcess { get; set; }
 
-        private string ErrorOut { get; set; }
-        private Stopwatch Stopwatch { get; set; }
-        private string LastInputID { get; set; }
-        private ManualResetEvent OutputDone { get; } = new(false);
-        private System.Timers.Timer ProcessIdleTimeout { get; set; }
         private string StandardOut { get; set; }
 
-
-        private void ShellProcess_ErrorDataReceived(object sender, DataReceivedEventArgs e)
-        {
-            if (e?.Data != null)
-            {
-                ErrorOut += e.Data + Environment.NewLine;
-            }
-        }
-
-        private void ShellProcess_OutputDataReceived(object sender, DataReceivedEventArgs e)
-        {
-            if (e?.Data?.Contains(LastInputID) == true)
-            {
-                OutputDone.Set();
-            }
-            else
-            {
-                StandardOut += e.Data + Environment.NewLine;
-            }
-
-        }
-
-        private void ProcessIdleTimeout_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
-        {
-            ShellProcess?.Kill();
-            _sessions.TryRemove(SenderConnectionId, out _);
-        }
-
-
+        private Stopwatch Stopwatch { get; set; }
 
         public static ExternalScriptingShell GetCurrent(ScriptingShell shell, string senderConnectionId)
         {
@@ -154,14 +89,14 @@ namespace Remotely.Agent.Services
                 ShellProcess.StandardInput.Write("echo " + LastInputID + _lineEnding);
 
                 var result = Task.WhenAny(
-                    Task.Run(() => 
+                    Task.Run(() =>
                     {
                         return ShellProcess.WaitForExit((int)timeout.TotalMilliseconds);
                     }),
-                    Task.Run(() => 
+                    Task.Run(() =>
                     {
                         return OutputDone.WaitOne();
-                    
+
                     })).ConfigureAwait(false).GetAwaiter().GetResult();
 
                 if (!result.Result)
@@ -171,7 +106,6 @@ namespace Remotely.Agent.Services
             }
             return GenerateCompletedResult(input);
         }
-
 
         private ScriptResult GenerateCompletedResult(string input)
         {
@@ -184,7 +118,7 @@ namespace Remotely.Agent.Services
                 DeviceID = _configService.GetConnectionInfo().DeviceID,
                 StandardOutput = StandardOut.Split(Environment.NewLine),
                 ErrorOutput = ErrorOut.Split(Environment.NewLine),
-                HadErrors = !string.IsNullOrWhiteSpace(ErrorOut) || 
+                HadErrors = !string.IsNullOrWhiteSpace(ErrorOut) ||
                     (ShellProcess.HasExited && ShellProcess.ExitCode != 0)
             };
         }
@@ -211,5 +145,78 @@ namespace Remotely.Agent.Services
             return partialResult;
         }
 
+        private void Init(ScriptingShell shell, string shellProcessName, string lineEnding, string connectionId)
+        {
+            _shell = shell;
+            _lineEnding = lineEnding;
+            SenderConnectionId = connectionId;
+
+            var psi = new ProcessStartInfo(shellProcessName)
+            {
+                WindowStyle = ProcessWindowStyle.Hidden,
+                Verb = "RunAs",
+                UseShellExecute = false,
+                RedirectStandardError = true,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true
+            };
+
+            var connectionInfo = _configService.GetConnectionInfo();
+            psi.Environment.Add("DeviceId", connectionInfo.DeviceID);
+            psi.Environment.Add("ServerUrl", connectionInfo.Host);
+
+            ShellProcess = new Process
+            {
+                StartInfo = psi
+            };
+            ShellProcess.ErrorDataReceived += ShellProcess_ErrorDataReceived;
+            ShellProcess.OutputDataReceived += ShellProcess_OutputDataReceived;
+
+            ShellProcess.Start();
+
+            ShellProcess.BeginErrorReadLine();
+            ShellProcess.BeginOutputReadLine();
+
+            ProcessIdleTimeout = new System.Timers.Timer(TimeSpan.FromMinutes(10).TotalMilliseconds)
+            {
+                AutoReset = false
+            };
+            ProcessIdleTimeout.Elapsed += ProcessIdleTimeout_Elapsed;
+            ProcessIdleTimeout.Start();
+
+            if (shell == ScriptingShell.WinPS)
+            {
+                WriteInput("$VerbosePreference = \"Continue\";", TimeSpan.FromSeconds(5));
+                WriteInput("$DebugPreference = \"Continue\";", TimeSpan.FromSeconds(5));
+                WriteInput("$InformationPreference = \"Continue\";", TimeSpan.FromSeconds(5));
+                WriteInput("$WarningPreference = \"Continue\";", TimeSpan.FromSeconds(5));
+            }
+        }
+        private void ProcessIdleTimeout_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
+        {
+            ShellProcess?.Kill();
+            _sessions.TryRemove(SenderConnectionId, out _);
+        }
+
+        private void ShellProcess_ErrorDataReceived(object sender, DataReceivedEventArgs e)
+        {
+            if (e?.Data != null)
+            {
+                ErrorOut += e.Data + Environment.NewLine;
+            }
+        }
+
+        private void ShellProcess_OutputDataReceived(object sender, DataReceivedEventArgs e)
+        {
+            if (e?.Data?.Contains(LastInputID) == true)
+            {
+                OutputDone.Set();
+            }
+            else
+            {
+                StandardOut += e.Data + Environment.NewLine;
+            }
+
+        }
     }
 }

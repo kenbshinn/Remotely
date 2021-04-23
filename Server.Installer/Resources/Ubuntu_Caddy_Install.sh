@@ -2,13 +2,38 @@
 echo "Thanks for trying Remotely!"
 echo
 
-AppRoot=$(dirname $(readlink -f $0))
-HostName=""
+Args=( "$@" )
+ArgLength=${#Args[@]}
+
+for (( i=0; i<${ArgLength}; i+=2 ));
+do
+    if [ "${Args[$i]}" = "--host" ]; then
+        HostName="${Args[$i+1]}"
+    elif [ "${Args[$i]}" = "--approot" ]; then
+        AppRoot="${Args[$i+1]}"
+    fi
+done
+
+if [ -z "$AppRoot" ]; then
+    read -p "Enter path where the Remotely server files should be installed (typically /var/www/remotely): " AppRoot
+    if [ -z "$AppRoot" ]; then
+        AppRoot="/var/www/remotely"
+    fi
+fi
+
+if [ -z "$HostName" ]; then
+    read -p "Enter server host (e.g. remotely.yourdomainname.com): " HostName
+fi
+
+chmod +x "$AppRoot/Remotely_Server"
 
 echo "Using $AppRoot as the Remotely website's content directory."
 
 UbuntuVersion=$(lsb_release -r -s)
 
+apt-get -y install curl
+apt-get -y install software-properties-common
+apt-get -y install gnupg
 
 # Install .NET Core Runtime.
 wget -q https://packages.microsoft.com/config/ubuntu/$UbuntuVersion/packages-microsoft-prod.deb
@@ -37,9 +62,9 @@ apt install caddy
 
 # Configure Caddy
 caddyConfig="
-    $HostName {
-        reverse_proxy 127.0.0.1:5000
-    }
+$HostName {
+    reverse_proxy 127.0.0.1:5000
+}
 "
 
 echo "$caddyConfig" > /etc/caddy/Caddyfile
@@ -74,5 +99,3 @@ systemctl restart remotely.service
 
 # Restart caddy
 systemctl restart caddy
-
-echo "Installation completed."

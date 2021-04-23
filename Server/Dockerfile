@@ -7,15 +7,13 @@ ENV ASPNETCORE_URLS="http://*:5000"
 
 
 RUN \
- apt-get -y update && \
- apt-get -y install \
+  apt-get -y update && \
+  apt-get -y install \
   apt-utils \
   wget \
   apt-transport-https \
   unzip \
   acl \
-  libc6-dev \
-  libgdiplus \
   libssl1.0
 
 RUN \
@@ -23,7 +21,6 @@ RUN \
   dpkg -i packages-microsoft-prod.deb && \
   apt-get -y update && \
   apt-get -y install aspnetcore-runtime-5.0
-
 
 RUN \
   mkdir -p /var/www/remotely && \
@@ -35,4 +32,4 @@ RUN \
   chown -R www-data:www-data /var/www/remotely
 
 WORKDIR /var/www/remotely
-ENTRYPOINT ["dotnet", "Remotely_Server.dll"]
+ENTRYPOINT ["/usr/bin/dotnet", "/var/www/remotely/Remotely_Server.dll"]
