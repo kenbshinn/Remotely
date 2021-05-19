@@ -5,6 +5,11 @@ A remote control and remote scripting solution, built with .NET 5, Blazor, Signa
 ![GitHub Build](https://github.com/lucent-sea/Remotely/workflows/GitHub%20Build/badge.svg)
 
 
+> ## Repo is "On Pause"
+> I will soon be starting a new job and moving my family into a new house.  Until I get settled in, the repo will be archived.  This is for my own peace of mind, as it's rather stressful to see requests/issues come in when I don't have time to address them.
+>
+> Once I'm ready to resume the project, the archival will be removed.
+
 ## Donations
 If this project has benefited you in some way, or if you just want to show appreciation, please consider donating to a charity.
 
@@ -49,8 +54,8 @@ However, you can also choose to install the pre-built packages that do not have 
 - If you want to use the pre-built package, run the installer now, and you're done!
   - Otherwise, follow the below steps for setting up the GitHub Actions integration, then run the installer afterward.
 - Fork the repo if you haven't already.
-  - If you've already forked the repo and haven't updated your fork since the new installer was created, you'll need to do so first.
-  - You can use the following commands to pull the latest changes, merge them, and push them back up to your repo ([git](https://git-scm.com/downloads) required).  Make sure to replace `{your-username}` with your GitHub username.
+  - If you've already forked the repo and haven't updated your fork recently, you'll need to do so first.
+  - You can use the following commands to pull the latest changes, merge them, and push them back up to your repo ([git](https://git-scm.com/downloads) required).  Make sure to replace `{your-username}` with your GitHub username.  This example assumes you've added your SSH key to your GitHub account.
 	```
 	git clone git@github.com:{your-username}/remotely
 	cd ./remotely
@@ -78,6 +83,14 @@ However, you can also choose to install the pre-built packages that do not have 
 - By default, SQLite is used for the database.
     - The "Remotely.db" database file is automatically created in the root folder of your site.
 	- You can browse and modify the contents using [DB Browser for SQLite](https://sqlitebrowser.org/).
+- Create your account by clicking the `Register` button on the main page.
+  - This account will be both the server admin and organization admin.
+  - An organization is automatically created for the account.
+    - Organizations are used to group together users, devices, and other data items into a single pool.
+    - By default, only one organization can exist on a server.
+    - The `Register` button will disappear.
+    - People will no longer be able to create accounts on their own.
+    - To allow self-registration, increase the `MaxOrganizationCount` or set it to -1 (see Configuration section).
 
 ## Upgrading
 * To upgrade a server, do any of the below to copy the new Server application files.
